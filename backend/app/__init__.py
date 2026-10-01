@@ -1,0 +1,1 @@
+"""Receiving Manager backend package."""
