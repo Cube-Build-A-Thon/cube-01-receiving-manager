@@ -13,7 +13,7 @@ Supplier delivery shortages and transit defects frequently surface weeks after a
 
 | Metric | Target / Benchmark | Measured Result | Measurement Method & Population | Status |
 |---|---|---|---|---|
-| **Single-Pass Batch Execution Time** | < 1,000 ms | **6.16 ms avg** (local heuristic) / < 800 ms (Gemini API) | Measured via `time.perf_counter()` per unit across 50 runs in `backend/eval_runner.py` (range: 4.99ms – 13.89ms) | ✅ PASS |
+| **Single-Pass Batch Execution Time** | < 1,000 ms | **6.16 ms avg** (local heuristic execution) | Measured via `time.perf_counter()` per unit across 50 runs in `backend/eval_runner.py` (range: 4.99ms – 13.89ms) | ✅ PASS |
 | **Inter-Annotator Agreement (Cohen's Kappa)** | > 0.75 | **1.00** | Calculated via $\kappa = \frac{p_o - p_e}{1 - p_e}$ using dual programmatic synthetic consensus fixtures in `backend/eval_runner.py` (formula verification; not independent human annotators) | ✅ PASS |
 | **Tenancy RLS Security Leak Rate** | 0.0% | **0.0% (Zero Rows)** | Verified by executing cross-tenant queries from Org Bravo targeting Org Alpha across 8 test vectors in `tests/test_security_tenancy.py` (0 rows leaked) | ✅ PASS |
 | **Synthetic Fixture Decision Accuracy** | > 90.0% | **100.0%** (43 of 43 judged units) | Calculated as $\frac{TP + TN}{\text{Total} - \text{UNCERTAIN}} = \frac{18 + 25}{43}$ on 50 deterministic synthetic fixtures in `fixtures/eval/` (evaluates deterministic rule adherence) | ✅ PASS |

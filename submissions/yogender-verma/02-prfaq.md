@@ -18,7 +18,7 @@ Receiving Manager integrates directly into warehouse receiving stations, running
 No. The agent operates under a strict **Fail-Open Policy** (Engineering Rule 3). If model vision latency spikes or network connection drops, the capture is preserved as `PENDING_REVIEW` and the operator proceeds without waiting.
 
 ### Q2: Why is batching model calls mandatory?
-Batching all 5 checks into a single vision pass (Engineering Rule 2) reduces API calls by 80% (1 batch call vs 5 individual calls: $1 - 1/5 = 80\%$) and ensures sub-second response times (6.16ms local heuristic execution; <800ms remote multimodal roundtrip measured via `eval_runner.py`).
+Batching all 5 checks into a single vision pass (Engineering Rule 2) reduces API calls by 80% (1 batch call vs 5 individual calls: $1 - 1/5 = 80\%$) and ensures sub-second response times (6.16ms local heuristic execution measured via `time.perf_counter()` in `eval_runner.py`).
 
 ### Q3: How does Receiving Manager handle blurry or occluded photographs?
 Unlike traditional vision classifiers that force a binary PASS/FAIL, Receiving Manager treats **UNCERTAIN** as a first-class verdict (Engineering Rule 4), notifying shift supervisors for secondary verification.
