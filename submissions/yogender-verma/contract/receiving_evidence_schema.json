@@ -1,0 +1,260 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EvidenceContractV1_1",
+  "type": "object",
+  "required": [
+    "record_id",
+    "schema_version",
+    "organization_id",
+    "client_id",
+    "agent",
+    "subject",
+    "captured_at",
+    "operator_label",
+    "images",
+    "checks",
+    "outcome",
+    "overrides",
+    "status",
+    "content_hash"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1.1"
+      ]
+    },
+    "organization_id": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "receiving",
+        "prep",
+        "pack",
+        "returns"
+      ]
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "unit",
+            "order",
+            "carton"
+          ]
+        },
+        "asin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sku": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "order_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "po_line_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shipment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "quantity_expected": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "quantity_observed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "captured_at": {
+      "type": "string"
+    },
+    "operator_label": {
+      "type": "string"
+    },
+    "images": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "sha256",
+          "bytes",
+          "taken_at"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "taken_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check_key",
+          "verdict",
+          "confidence",
+          "detail",
+          "model_version",
+          "latency_ms"
+        ],
+        "properties": {
+          "check_key": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "uncertain"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "object"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "decision",
+        "decided_by",
+        "decided_at"
+      ],
+      "properties": {
+        "decision": {
+          "type": "string"
+        },
+        "decided_by": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "operator"
+          ]
+        },
+        "decided_at": {
+          "type": "string"
+        }
+      }
+    },
+    "overrides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check_key",
+          "from_verdict",
+          "to_verdict",
+          "reason",
+          "by",
+          "at"
+        ],
+        "properties": {
+          "check_key": {
+            "type": "string"
+          },
+          "from_verdict": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "uncertain"
+            ]
+          },
+          "to_verdict": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "uncertain"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "pending",
+        "failed"
+      ]
+    },
+    "content_hash": {
+      "type": "string"
+    }
+  }
+}

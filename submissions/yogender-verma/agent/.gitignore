@@ -1,0 +1,44 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.coverage
+coverage/
+htmlcov/
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+dist/
+build/
+frontend/dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Databases
+backend/*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# System & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+tmp/
+temp/
+*.tmp

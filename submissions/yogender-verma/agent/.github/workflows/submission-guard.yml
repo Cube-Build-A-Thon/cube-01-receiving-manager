@@ -1,0 +1,33 @@
+name: submission-guard
+
+# pull_request_target runs this file and the guard script as they are on main,
+# so a PR cannot edit its own check. It never checks out or runs PR code:
+# it only reads the list of changed files.
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  submission-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Fetch PR head (read-only, never executed)
+        run: git fetch --no-tags origin "${{ github.event.pull_request.head.sha }}"
+
+      - name: Check branch name and changed paths
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ADMIN: Cube-Buildathon
+        run: bash .github/scripts/submission-guard.sh
