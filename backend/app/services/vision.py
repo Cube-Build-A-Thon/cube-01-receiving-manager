@@ -265,6 +265,8 @@ class VisionService:
         validated = self._validate_payload(payload, require_all_images=not settings.demo_mode)
         return self._build_result(validated)
 
+    def analyze_observations(self, payload: VisionAnalysisResponse) -> dict[str, Any]:
+        """Apply the existing deterministic checks to evidence supplied by another agent."""
         validated = self._validate_payload(payload)
         return self._build_result(validated)
 
@@ -320,7 +322,13 @@ class VisionService:
                     observed_cartons=None,
                     observed_units_per_carton=None,
                     detected_variant=self._first_observation_value(image_result.observations, "variant"),
-                    damage_types=[str(v.observation) for v in image_result.observations if v.check_type == "damage" and v.observation not in {None, "none", "no_damage", "uncertain"}],
+                    damage_types=[
+                        str(value)
+                        for item in image_result.observations
+                        if item.check_type == "damage"
+                        for value in (item.observation if isinstance(item.observation, list) else [item.observation])
+                        if value is not None and str(value).strip().lower() not in {"none", "no_damage", "uncertain"}
+                    ],
                     missing_components=[],
                     visibility_quality=image_result.visibility,
                     confidence=max((obs.confidence for obs in image_result.observations), default=0.0),

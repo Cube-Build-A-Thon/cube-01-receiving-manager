@@ -18,6 +18,25 @@ def _normalize(value):
     return value
 
 
+def _coerce_int(value):
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if cleaned == "":
+            return None
+        normalized = _normalize(cleaned)
+        if normalized is None:
+            return None
+        try:
+            return int(float(cleaned))
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def evaluate_overall(checks: list[dict]) -> Decision:
     """Return the overall verdict based on the current check states."""
     if not checks:
@@ -46,17 +65,17 @@ def evaluate_sku_check(expected_sku, observed_sku):
 
 
 def evaluate_quantity_check(expected_quantity, observed_quantity):
-    expected = expected_quantity
-    observed = observed_quantity
+    expected = _coerce_int(expected_quantity)
+    observed = _coerce_int(observed_quantity)
 
     if expected is None:
         return {"status": "UNCERTAIN", "reason": "Expected quantity is missing."}
     if observed is None:
         return {"status": "UNCERTAIN", "reason": "Observed quantity is unavailable because the evidence is insufficient."}
-    if int(observed) < 0:
+    if observed < 0:
         return {"status": "UNCERTAIN", "reason": "Observed quantity is invalid."}
 
-    if int(observed) == int(expected):
+    if observed == expected:
         return {"status": "PASS", "reason": "Observed quantity matches the expected quantity."}
 
     return {
@@ -66,17 +85,20 @@ def evaluate_quantity_check(expected_quantity, observed_quantity):
 
 
 def evaluate_carton_check(expected_cartons, observed_cartons):
-    if expected_cartons is None:
+    expected = _coerce_int(expected_cartons)
+    observed = _coerce_int(observed_cartons)
+
+    if expected is None:
         return {"status": "UNCERTAIN", "reason": "Expected carton count is missing."}
-    if observed_cartons is None:
+    if observed is None:
         return {"status": "UNCERTAIN", "reason": "Observed carton count is unavailable because the evidence is insufficient."}
 
-    if int(observed_cartons) == int(expected_cartons):
+    if observed == expected:
         return {"status": "PASS", "reason": "Observed carton count matches the expected carton count."}
 
     return {
         "status": "FAIL",
-        "reason": f"Carton count mismatch: expected {expected_cartons}, observed {observed_cartons}.",
+        "reason": f"Carton count mismatch: expected {expected}, observed {observed}.",
     }
 
 
@@ -122,8 +144,23 @@ def evaluate_damage_check(observed_damage):
 
 
 def evaluate_component_check(expected_components, observed_components):
-    expected = [str(item).strip() for item in (expected_components or []) if str(item).strip()]
-    observed = [str(item).strip() for item in (observed_components or []) if str(item).strip()]
+    def _as_component_list(value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value.strip() else []
+        if isinstance(value, (list, tuple, set)):
+            items = []
+            for item in value:
+                text = str(item).strip()
+                if text:
+                    items.append(text)
+            return items
+        text = str(value).strip()
+        return [text] if text else []
+
+    expected = _as_component_list(expected_components)
+    observed = _as_component_list(observed_components)
 
     if not expected:
         return {"status": "NOT_REQUIRED", "reason": "No components are required by the purchase order."}

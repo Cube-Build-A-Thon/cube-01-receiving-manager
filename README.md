@@ -142,6 +142,22 @@ This is clearly labeled in the UI and should not be mistaken for real AI output.
 - `GET /api/inspections/{inspection_id}/images/{image_id}`
 - `POST /api/inspections/{inspection_id}/analyze`
 
+## Round 3 A2A Integration
+
+The Receiving Manager exposes a separate, versioned A2A API for the Pod orchestrator:
+
+- Agent identity: `receiving-manager`
+- Agent version: `1.0.0`
+- Protocol version: `1.0`
+- Supported action: `verify_receiving`
+- `GET /api/v1/agent/receiving/health`
+- `GET /api/v1/agent/receiving/capabilities`
+- `POST /api/v1/agent/receiving`
+
+The request includes `request_id`, `agent`, `action`, and a payload containing `purchase_order`, `shipment`, and `evidence`. Evidence consists of supplied observations; the endpoint does not invent shipment facts. Successful responses contain the deterministic receiving decision (`PASS`, `EXCEPTION`, or `UNCERTAIN`), checks, evidence/findings, and an optional `next_action`. An exception may recommend `recovery-manager`, but the orchestrator performs all agent routing.
+
+Errors return `status: "failed"` and a structured error with a code, message, and retryable flag; no fake success is returned when analysis fails. See [docs/A2A.md](docs/A2A.md) for request/response examples, error behavior, capabilities, and the orchestrator responsibility boundary. Machine-readable schemas are in `contracts/`.
+
 ## AI workflow
 
 - load inspection photos from the storage layer

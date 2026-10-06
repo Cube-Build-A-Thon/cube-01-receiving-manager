@@ -113,9 +113,20 @@ def _detect_image_mime(content: bytes) -> str:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is not a valid supported image.")
 
 
+def _normalize_image_type(value: str | None) -> str:
+    if not value:
+        return ""
+    normalized = value.strip().lower()
+    aliases = {
+        "image/jpg": "image/jpeg",
+        "image/pjpeg": "image/jpeg",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def _validate_image_upload(file: UploadFile, inspection_id: str):
     settings = get_settings()
-    allowed_types = {item.strip().lower() for item in settings.allowed_image_types.split(",") if item.strip()}
+    allowed_types = { _normalize_image_type(item) for item in settings.allowed_image_types.split(",") if item.strip() }
     allowed_exts = {item.strip().lower() for item in settings.allowed_extensions.split(",") if item.strip()}
 
     original_name = (file.filename or "upload").strip()
@@ -147,7 +158,8 @@ def _validate_image_upload(file: UploadFile, inspection_id: str):
     if expected_by_suffix.get(suffix) != detected_type:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file content does not match the provided file extension.")
 
-    if file.content_type and file.content_type.lower() not in allowed_types:
+    normalized_content_type = _normalize_image_type(file.content_type)
+    if normalized_content_type and normalized_content_type not in allowed_types:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported file type: {file.content_type}")
 
     safe_stored_name = f"{uuid4().hex}_{inspection_id}{suffix}"

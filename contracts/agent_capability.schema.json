@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_capability.schema.json",
+  "title": "Receiving Manager Agent Capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agent", "version", "protocol_version", "capabilities", "actions"],
+  "properties": {
+    "agent": {"const": "receiving-manager"},
+    "version": {"const": "1.0.0"},
+    "protocol_version": {"const": "1.0"},
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "enum": ["shipment_verification", "sku_verification", "quantity_verification", "carton_verification", "variant_verification", "damage_detection", "component_verification"]
+      }
+    },
+    "actions": {"type": "array", "items": {"enum": ["verify_receiving"]}}
+  }
+}

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.app.core.config import get_settings
-from backend.app.core.decision_engine import evaluate_inspection
+from backend.app.core.decision_engine import evaluate_carton_check, evaluate_inspection, evaluate_quantity_check
 from backend.app.main import app
 from backend.app.models.inspection import InspectionCheck
 
@@ -130,6 +130,11 @@ def test_uncertain_decision():
 
     result = evaluate_inspection(checks)
     assert result == "UNCERTAIN"
+
+
+def test_invalid_numeric_observations_are_treated_as_uncertain():
+    assert evaluate_quantity_check(24, "abc") == {"status": "UNCERTAIN", "reason": "Observed quantity is unavailable because the evidence is insufficient."}
+    assert evaluate_carton_check(2, "N/A") == {"status": "UNCERTAIN", "reason": "Observed carton count is unavailable because the evidence is insufficient."}
 
 
 def test_inspection_not_found():

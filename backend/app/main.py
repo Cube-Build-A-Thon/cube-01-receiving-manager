@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.app.core.config import get_settings
+from .api.agent import router as agent_router
 from .api.inspections import router as inspections_router
 
 app = FastAPI(title="Receiving Manager", version="0.1.0")
@@ -23,6 +24,7 @@ def health() -> JSONResponse:
 
 
 app.include_router(inspections_router)
+app.include_router(agent_router)
 
 
 if __name__ == "__main__":

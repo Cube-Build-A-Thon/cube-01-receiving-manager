@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "receiving_request.schema.json",
+  "title": "Receiving Manager Agent Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "agent", "action", "payload"],
+  "properties": {
+    "request_id": {"type": "string", "minLength": 1},
+    "agent": {"const": "receiving-manager"},
+    "action": {"const": "verify_receiving"},
+    "payload": {"$ref": "#/$defs/ReceivingPayload"},
+    "metadata": {"type": ["object", "null"], "additionalProperties": true}
+  },
+  "$defs": {
+    "PurchaseOrder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["po_id", "sku", "product_name", "expected_quantity", "variant", "units_per_carton", "expected_cartons"],
+      "properties": {
+        "po_id": {"type": "string", "minLength": 1},
+        "sku": {"type": "string", "minLength": 1},
+        "product_name": {"type": "string", "minLength": 1},
+        "expected_quantity": {"type": "integer", "minimum": 0},
+        "variant": {"type": "string", "minLength": 1},
+        "units_per_carton": {"type": "integer", "minimum": 1},
+        "expected_cartons": {"type": "integer", "minimum": 0},
+        "expected_components": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "ReceivingEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "image_id", "check_type", "confidence", "description"],
+      "properties": {
+        "evidence_id": {"type": "string", "minLength": 1},
+        "image_id": {"type": "string", "minLength": 1},
+        "check_type": {"enum": ["sku", "quantity", "variant", "damage", "components", "carton"]},
+        "observation": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "integer"},
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "null"}
+          ]
+        },
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "bounding_region": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    },
+    "ReceivingPayload": {
+      "type": "object",
+      "required": ["purchase_order", "shipment", "evidence"],
+      "properties": {
+        "purchase_order": {"$ref": "#/$defs/PurchaseOrder"},
+        "shipment": {"type": "object", "additionalProperties": true},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/ReceivingEvidence"}}
+      },
+      "additionalProperties": true
+    }
+  }
+}

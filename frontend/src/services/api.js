@@ -5,6 +5,14 @@ export async function healthCheck() {
   return response.json();
 }
 
+export async function listInspections() {
+  const response = await fetch(`${API_BASE_URL}/api/inspections`);
+  if (!response.ok) {
+    throw new Error('Failed to load inspections');
+  }
+  return response.json();
+}
+
 export async function createInspection(poData) {
   const response = await fetch(`${API_BASE_URL}/api/inspections`, {
     method: 'POST',
