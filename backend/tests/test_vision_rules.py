@@ -32,6 +32,7 @@ def _vision_payload(*image_observations):
         images=[
             VisionImageResult(
                 image_id=f"image-{index}",
+                visibility="clear",
                 observations=[
                     VisionObservationItem(
                         check_type=check_type,

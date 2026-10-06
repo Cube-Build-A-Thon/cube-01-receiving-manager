@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -19,13 +19,59 @@ from backend.app.models.evidence import Evidence
 from backend.app.models.inspection import InspectionCheck, VisualObservation
 
 VALID_CHECK_TYPES = {"sku", "quantity", "variant", "damage", "components", "carton", "units_per_carton"}
+VISION_ANALYSIS_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "images": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "image_id": {"type": "string"},
+                    "visibility": {
+                        "type": "string",
+                        "enum": ["clear", "blurred", "occluded", "dark", "uncertain"],
+                    },
+                    "observations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "check_type": {
+                                    "type": "string",
+                                    "enum": sorted(VALID_CHECK_TYPES),
+                                },
+                                "observation": {
+                                    "anyOf": [
+                                        {"type": "string"},
+                                        {"type": "integer"},
+                                        {"type": "array", "items": {"type": "string"}},
+                                        {"type": "null"},
+                                    ]
+                                },
+                                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                                "description": {"type": "string"},
+                            },
+                            "required": ["check_type", "observation", "confidence", "description"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["image_id", "visibility", "observations"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["images"],
+    "additionalProperties": False,
+}
 
 
 class VisionObservationItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     check_type: str = Field(..., min_length=1)
-    observation: str | int | list[str] | None = None
+    observation: str | int | list[str] | None
     confidence: float = Field(..., ge=0.0, le=1.0)
     description: str = Field(..., min_length=1)
 
@@ -42,14 +88,14 @@ class VisionImageResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     image_id: str = Field(..., min_length=1)
-    visibility: str = Field(default="clear")
-    observations: list[VisionObservationItem] = Field(default_factory=list)
+    visibility: Literal["clear", "blurred", "occluded", "dark", "uncertain"]
+    observations: list[VisionObservationItem]
 
 
 class VisionAnalysisResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    images: list[VisionImageResult] = Field(default_factory=list)
+    images: list[VisionImageResult]
 
 
 class VisionService:
@@ -57,17 +103,20 @@ class VisionService:
         self.inspection = inspection
 
     @staticmethod
-    def _make_demo_scenario(scenario_name: str | None) -> VisionAnalysisResponse:
+    def _make_demo_scenario(scenario_name: str | None, inspection: Any | None = None) -> VisionAnalysisResponse:
         scenario = (scenario_name or "correct_shipment").strip().lower().replace(" ", "_")
+        image_id = inspection.images[0].image_id if inspection and inspection.images else "demo-1"
         demos = {
             "correct_shipment": {
                 "images": [
                     {
-                        "image_id": "demo-1",
+                        "image_id": image_id,
                         "visibility": "clear",
                         "observations": [
                             {"check_type": "sku", "observation": "BLUE-BOTTLE-001", "confidence": 0.97, "description": "SKU label matches the PO."},
                             {"check_type": "quantity", "observation": 24, "confidence": 0.93, "description": "24 units are visible and countable."},
+                            {"check_type": "carton", "observation": 2, "confidence": 0.93, "description": "Two cartons are visible."},
+                            {"check_type": "units_per_carton", "observation": 12, "confidence": 0.93, "description": "Twelve units per carton are visible."},
                             {"check_type": "variant", "observation": "Blue", "confidence": 0.96, "description": "Packaging colour matches the expected variant."},
                             {"check_type": "damage", "observation": "none", "confidence": 0.95, "description": "No visible carton or product damage."},
                             {"check_type": "components", "observation": ["cap", "label"], "confidence": 0.9, "description": "Required components are present."},
@@ -78,11 +127,13 @@ class VisionService:
             "short_shipment": {
                 "images": [
                     {
-                        "image_id": "demo-1",
+                        "image_id": image_id,
                         "visibility": "clear",
                         "observations": [
                             {"check_type": "sku", "observation": "BLUE-BOTTLE-001", "confidence": 0.97, "description": "SKU label matches the PO."},
                             {"check_type": "quantity", "observation": 22, "confidence": 0.92, "description": "22 units are visible; 2 units are missing."},
+                            {"check_type": "carton", "observation": 2, "confidence": 0.93, "description": "Two cartons are visible."},
+                            {"check_type": "units_per_carton", "observation": 12, "confidence": 0.93, "description": "Twelve units per carton are visible."},
                             {"check_type": "variant", "observation": "Blue", "confidence": 0.96, "description": "Packaging colour matches the expected variant."},
                             {"check_type": "damage", "observation": "none", "confidence": 0.95, "description": "No visible carton or product damage."},
                         ],
@@ -92,11 +143,13 @@ class VisionService:
             "wrong_variant": {
                 "images": [
                     {
-                        "image_id": "demo-1",
+                        "image_id": image_id,
                         "visibility": "clear",
                         "observations": [
                             {"check_type": "sku", "observation": "BLUE-BOTTLE-001", "confidence": 0.96, "description": "SKU label is visible and matches the product."},
                             {"check_type": "quantity", "observation": 24, "confidence": 0.93, "description": "Quantity matches the expected count."},
+                            {"check_type": "carton", "observation": 2, "confidence": 0.93, "description": "Two cartons are visible."},
+                            {"check_type": "units_per_carton", "observation": 12, "confidence": 0.93, "description": "Twelve units per carton are visible."},
                             {"check_type": "variant", "observation": "Red", "confidence": 0.97, "description": "The product is visibly red rather than blue."},
                             {"check_type": "damage", "observation": "none", "confidence": 0.95, "description": "No visible carton or product damage."},
                         ],
@@ -106,11 +159,13 @@ class VisionService:
             "damaged_carton": {
                 "images": [
                     {
-                        "image_id": "demo-1",
+                        "image_id": image_id,
                         "visibility": "clear",
                         "observations": [
                             {"check_type": "sku", "observation": "BLUE-BOTTLE-001", "confidence": 0.96, "description": "SKU label is visible and matches the PO."},
                             {"check_type": "quantity", "observation": 24, "confidence": 0.94, "description": "The full count is visible."},
+                            {"check_type": "carton", "observation": 2, "confidence": 0.93, "description": "Two cartons are visible."},
+                            {"check_type": "units_per_carton", "observation": 12, "confidence": 0.93, "description": "Twelve units per carton are visible."},
                             {"check_type": "variant", "observation": "Blue", "confidence": 0.95, "description": "The variant matches the expected Blue shipment."},
                             {"check_type": "damage", "observation": ["crushing"], "confidence": 0.9, "description": "Carton corner shows visible crushing."},
                         ],
@@ -120,7 +175,7 @@ class VisionService:
             "ambiguous": {
                 "images": [
                     {
-                        "image_id": "demo-1",
+                        "image_id": image_id,
                         "visibility": "blurred",
                         "observations": [
                             {"check_type": "sku", "observation": None, "confidence": 0.4, "description": "The labelling is too blurred to read reliably."},
@@ -136,12 +191,21 @@ class VisionService:
         payload = demos.get(scenario)
         if payload is None:
             payload = demos["correct_shipment"]
+        if inspection:
+            if inspection.images:
+                template = payload["images"][0]
+                payload["images"] = [
+                    {**template, "image_id": image.image_id}
+                    for image in inspection.images
+                ]
+            else:
+                payload["images"] = []
         return VisionAnalysisResponse.model_validate(payload)
 
     def analyze(self, scenario: str | None = None) -> dict[str, Any]:
         settings = get_settings()
         if settings.demo_mode:
-            payload = self._make_demo_scenario(scenario)
+            payload = self._make_demo_scenario(scenario, self.inspection)
         else:
             if not settings.api_key:
                 raise ValueError("AI analysis is not configured. Set AI_API_KEY or OPENAI_API_KEY in the environment.")
@@ -160,39 +224,68 @@ class VisionService:
                         "image_url": f"data:{image.mime_type};base64,{__import__('base64').b64encode(handle.read()).decode('utf-8')}",
                     })
 
-            prompt = "Inspect the incoming receiving images and report only visible evidence. Do not guess hidden quantities or infer missing components unless there is clear visible evidence. Distinguish not visible from missing. Report uncertainty instead of guessing. Do not make the final business decision; only provide structured evidence for the receiving manager."
+            image_references = "\n".join(
+                f"Input image {index} has server image_id {image.image_id}."
+                for index, image in enumerate(self.inspection.images, start=1)
+            )
+            prompt = (
+                "Inspect every incoming receiving image and report only visible evidence. "
+                "Do not guess hidden quantities or infer missing components unless there is clear visible evidence. "
+                "Distinguish not visible from missing and report uncertainty instead of guessing. "
+                "Do not make the final business decision; only provide structured evidence for the receiving manager. "
+                "Return exactly one images entry for each listed server image_id, and use each ID exactly once. "
+                "For each image, report only what is visible in that image. "
+                "Do not infer or echo purchase-order expectations; no expected values are provided.\n"
+                f"{image_references}"
+            )
             response = client.responses.create(
                 model=settings.ai_model,
                 input=[
                     {"role": "user", "content": [{"type": "input_text", "text": prompt}] + image_payload},
                 ],
-                response_format={"type": "json_schema", "json_schema": {"name": "receiving_analysis", "schema": {"type": "object", "properties": {"images": {"type": "array", "items": {"type": "object", "properties": {"image_id": {"type": "string"}, "visibility": {"type": "string"}, "observations": {"type": "array", "items": {"type": "object", "properties": {"check_type": {"type": "string"}, "observation": {"anyOf": [{"type": "string"}, {"type": "integer"}, {"type": "array", "items": {"type": "string"}}]}, "confidence": {"type": "number"}, "description": {"type": "string"}}, "required": ["check_type", "confidence", "description"], "additionalProperties": False}}}, "required": ["image_id", "observations"], "additionalProperties": False}}}, "required": ["images"], "additionalProperties": False}}},
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": "receiving_analysis",
+                        "strict": True,
+                        "schema": VISION_ANALYSIS_JSON_SCHEMA,
+                    }
+                },
             )
             try:
-                raw_text = response.output_text
-                payload = VisionAnalysisResponse.model_validate_json(raw_text)
-            except Exception:
-                try:
-                    payload = VisionAnalysisResponse.model_validate(response.model_dump())
-                except Exception as exc:  # pragma: no cover
-                    raise ValueError(f"AI returned malformed structured output: {exc}") from exc
+                payload = VisionAnalysisResponse.model_validate_json(response.output_text)
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError(f"AI returned malformed structured output: {exc}") from exc
+
+        validated = self._validate_payload(payload, require_all_images=not settings.demo_mode)
+        return self._build_result(validated)
 
         validated = self._validate_payload(payload)
         return self._build_result(validated)
 
-    def _validate_payload(self, payload: VisionAnalysisResponse) -> VisionAnalysisResponse:
+    def _validate_payload(
+        self, payload: VisionAnalysisResponse, require_all_images: bool = False
+    ) -> VisionAnalysisResponse:
         valid_image_ids = {image.image_id for image in self.inspection.images}
         if not self.inspection.images and not payload.images:
             return payload
+        if require_all_images and not valid_image_ids:
+            raise ValueError("AI response cannot reference images because none were uploaded.")
 
         for image_result in payload.images:
             if self.inspection.images and image_result.image_id not in valid_image_ids:
                 raise ValueError(f"AI response referenced an unknown image_id: {image_result.image_id}")
-            if image_result.visibility.strip().lower() not in {"clear", "blurred", "occluded", "dark", "uncertain"}:
-                image_result.visibility = "uncertain"
+            if image_result.visibility not in {"clear", "blurred", "occluded", "dark", "uncertain"}:
+                raise ValueError("AI response contained an unsupported visibility value.")
             for observation in image_result.observations:
                 if observation.confidence < 0 or observation.confidence > 1:
                     raise ValueError("Observation confidence must be between 0 and 1.")
+        if require_all_images:
+            response_image_ids = [image.image_id for image in payload.images]
+            if len(response_image_ids) != len(set(response_image_ids)):
+                raise ValueError("AI response must reference each uploaded image exactly once.")
+            if set(response_image_ids) != valid_image_ids:
+                raise ValueError("AI response must reference every uploaded image exactly once.")
         return payload
 
     def _build_result(self, payload: VisionAnalysisResponse) -> dict[str, Any]:
