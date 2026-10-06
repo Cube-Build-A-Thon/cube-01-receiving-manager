@@ -76,6 +76,70 @@ class InspectionCheck(BaseModel):
         return value.strip()
 
 
+class EvidenceSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    po_number: str
+    po_line: str | None = None
+    sku: str
+    asin: str | None = None
+
+
+class EvidenceImageDigest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    view: str
+    sha256_digest: str = Field(..., min_length=64, max_length=64)
+
+
+class SealedInspectionCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_key: str
+    verdict: DecisionStatus
+    observed_state: str | int | list[str] | None = None
+    reason_code: str
+    measurements: dict[str, str | int | list[str] | None] = Field(default_factory=dict)
+    model_version: str
+    rule_ids: list[str] = Field(default_factory=list)
+
+
+class EvidenceOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: FinalDecision
+    disposition: Literal["ACCEPT", "EXCEPTION", "HOLD"]
+    prep_hold: bool
+
+
+class InspectionOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator_id: str
+    reason: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    before_verdict: FinalDecision
+    after_verdict: FinalDecision
+    before_content_hash: str
+    after_content_hash: str
+
+
+class SealedEvidenceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: str
+    schema_version: str
+    organization_id: str
+    subject: EvidenceSubject
+    images: list[EvidenceImageDigest] = Field(default_factory=list)
+    checks: list[SealedInspectionCheck] = Field(default_factory=list)
+    outcome: EvidenceOutcome
+    overrides: list[InspectionOverride] = Field(default_factory=list)
+    status: InspectionStatus
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    content_hash: str = Field(..., min_length=64, max_length=64)
+
+
 class Inspection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,6 +149,10 @@ class Inspection(BaseModel):
     observations: list[VisualObservation] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     checks: list[InspectionCheck] = Field(default_factory=list)
+    organization_id: str = "default"
+    analysis_records: list[SealedEvidenceRecord] = Field(default_factory=list)
+    overrides: list[InspectionOverride] = Field(default_factory=list)
+    prep_hold: bool = False
     final_decision: FinalDecision = "UNCERTAIN"
     override_decision: FinalDecision | None = None
     override_reason: str | None = None

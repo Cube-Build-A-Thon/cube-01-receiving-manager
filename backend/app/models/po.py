@@ -14,6 +14,8 @@ class PurchaseOrder(BaseModel):
     units_per_carton: int = Field(..., ge=1)
     expected_cartons: int = Field(..., ge=0)
     expected_components: list[str] = Field(default_factory=list)
+    po_line: str | None = None
+    asin: str | None = None
 
     @field_validator("po_id", "sku", "product_name", "variant")
     @classmethod

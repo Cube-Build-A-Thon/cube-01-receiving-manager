@@ -314,3 +314,39 @@ def test_operator_override_writes_agent_decision_and_reason():
     follow_up = client.get(f"/api/inspections/{inspection['inspection_id']}")
     assert follow_up.status_code == 200
     assert follow_up.json()["override_decision"] == "EXCEPTION"
+    override = follow_up.json()["overrides"][0]
+    assert override["operator_id"] == "unauthenticated"
+    assert override["before_verdict"] == "UNCERTAIN"
+    assert override["after_verdict"] == "EXCEPTION"
+    assert override["before_content_hash"] != override["after_content_hash"]
+
+
+def test_override_history_survives_analysis_reruns(monkeypatch):
+    monkeypatch.setenv("DEMO_MODE", "true")
+    get_settings.cache_clear()
+    inspection = _create_inspection({"po": {"po_id": "PO-2016", "sku": "BLUE-BOTTLE-001", "product_name": "Blue Bottle", "expected_quantity": 24, "variant": "Blue", "units_per_carton": 12, "expected_cartons": 2}})
+
+    first = client.post(f"/api/inspections/{inspection['inspection_id']}/analyze")
+    assert first.status_code == 200
+    override = client.post(
+        f"/api/inspections/{inspection['inspection_id']}/override",
+        json={"decision": "EXCEPTION", "reason": "Manual receiving review."},
+    )
+    assert override.status_code == 200
+    override_record_hash = override.json()["evidence_record"]["content_hash"]
+
+    rerun = client.post(
+        f"/api/inspections/{inspection['inspection_id']}/analyze",
+        params={"scenario": "short_shipment"},
+    )
+    assert rerun.status_code == 200
+    stored = client.get(f"/api/inspections/{inspection['inspection_id']}").json()
+
+    assert len(stored["overrides"]) == 1
+    assert stored["overrides"][0]["reason"] == "Manual receiving review."
+    assert len(stored["analysis_records"]) == 3
+    assert stored["analysis_records"][1]["content_hash"] == override_record_hash
+    assert stored["analysis_records"][2]["overrides"][0]["after_verdict"] == "EXCEPTION"
+    assert stored["prep_hold"] is True
+    monkeypatch.delenv("DEMO_MODE", raising=False)
+    get_settings.cache_clear()

@@ -11,8 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.app.core.config import get_settings
 from backend.app.core.decision_engine import evaluate_overall
 from backend.app.database.repository import InspectionRepository
-from backend.app.models.inspection import Inspection, InspectionCheck, ReceivingImage
+from backend.app.models.inspection import Inspection, InspectionCheck, InspectionOverride, ReceivingImage
 from backend.app.models.po import PurchaseOrder
+from backend.app.services.evidence_seal import (
+    build_sealed_evidence_record,
+    has_prep_hold,
+    inspection_state_hash,
+)
 from backend.app.services.storage import LocalStorage
 from backend.app.services.vision import VisionService
 
@@ -69,6 +74,14 @@ def _store_pending_review(inspection: Inspection, reason_code: str) -> dict:
     inspection.checks = []
     inspection.evidence = []
     inspection.observations = []
+    inspection.prep_hold = True
+    record_count = len(inspection.analysis_records)
+    try:
+        record = build_sealed_evidence_record(inspection)
+        inspection.analysis_records.append(record)
+    except OSError:
+        reason_code = "EVIDENCE_SEAL_FAILED"
+        inspection.analysis_failure_reason_code = reason_code
     repository.update(inspection)
     return {
         "inspection_id": inspection.inspection_id,
@@ -80,6 +93,12 @@ def _store_pending_review(inspection: Inspection, reason_code: str) -> dict:
         "analysis_status": "pending_review",
         "status": inspection.status,
         "reason_code": reason_code,
+        "prep_hold": inspection.prep_hold,
+        "evidence_record": (
+            inspection.analysis_records[-1].model_dump(mode="json")
+            if len(inspection.analysis_records) > record_count
+            else None
+        ),
         "agent_summary": inspection.agent_summary,
     }
 
@@ -262,6 +281,12 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
         inspection.agent_summary = _build_agent_summary(inspection)
         inspection.status = "completed"
         inspection.updated_at = datetime.now(timezone.utc)
+        inspection.prep_hold = has_prep_hold(inspection)
+        try:
+            record = build_sealed_evidence_record(inspection)
+        except OSError:
+            return _store_pending_review(inspection, "EVIDENCE_SEAL_FAILED")
+        inspection.analysis_records.append(record)
         repository.update(inspection)
         return {
             "inspection_id": inspection_id,
@@ -271,6 +296,9 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
             "observations": result["observations"],
             "demo_mode": True,
             "analysis_status": "demo",
+            "status": inspection.status,
+            "prep_hold": inspection.prep_hold,
+            "evidence_record": record.model_dump(mode="json"),
             "agent_summary": inspection.agent_summary,
         }
 
@@ -312,6 +340,12 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
     inspection.agent_summary = _build_agent_summary(inspection)
     inspection.status = "completed"
     inspection.updated_at = datetime.now(timezone.utc)
+    inspection.prep_hold = has_prep_hold(inspection)
+    try:
+        record = build_sealed_evidence_record(inspection)
+    except OSError:
+        return _store_pending_review(inspection, "EVIDENCE_SEAL_FAILED")
+    inspection.analysis_records.append(record)
     repository.update(inspection)
 
     return {
@@ -322,6 +356,9 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
         "observations": result["observations"],
         "demo_mode": False,
         "analysis_status": "complete",
+        "status": inspection.status,
+        "prep_hold": inspection.prep_hold,
+        "evidence_record": record.model_dump(mode="json"),
         "agent_summary": inspection.agent_summary,
     }
 
@@ -336,14 +373,52 @@ def override_inspection(inspection_id: str, payload: InspectionOverrideRequest):
     if decision not in {"PASS", "EXCEPTION", "UNCERTAIN"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Override decision must be PASS, EXCEPTION, or UNCERTAIN.")
 
-    inspection.override_decision = decision
-    inspection.override_reason = payload.reason.strip()
+    before_verdict = inspection.final_decision
+    before_content_hash = inspection_state_hash(inspection, before_verdict)
+    previous_values = {
+        "prep_hold": inspection.prep_hold,
+        "override_decision": inspection.override_decision,
+        "override_reason": inspection.override_reason,
+        "status": inspection.status,
+        "updated_at": inspection.updated_at,
+        "agent_summary": inspection.agent_summary,
+    }
+    reason = payload.reason.strip()
     inspection.final_decision = decision
+    inspection.prep_hold = has_prep_hold(inspection)
+    override = InspectionOverride(
+        operator_id="unauthenticated",
+        reason=reason,
+        timestamp=datetime.now(timezone.utc),
+        before_verdict=before_verdict,
+        after_verdict=decision,
+        before_content_hash=before_content_hash,
+        after_content_hash=inspection_state_hash(inspection, decision),
+    )
+    inspection.overrides.append(override)
+    inspection.override_decision = decision
+    inspection.override_reason = reason
     inspection.status = "completed"
     inspection.updated_at = datetime.now(timezone.utc)
     inspection.agent_summary = (
         f"Operator override applied: {decision}. Reason: {inspection.override_reason}"
     )
+    try:
+        record = build_sealed_evidence_record(inspection)
+    except OSError as exc:
+        inspection.overrides.pop()
+        inspection.final_decision = before_verdict
+        inspection.prep_hold = previous_values["prep_hold"]
+        inspection.override_decision = previous_values["override_decision"]
+        inspection.override_reason = previous_values["override_reason"]
+        inspection.status = previous_values["status"]
+        inspection.updated_at = previous_values["updated_at"]
+        inspection.agent_summary = previous_values["agent_summary"]
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to seal inspection evidence for this override.",
+        ) from exc
+    inspection.analysis_records.append(record)
     repository.update(inspection)
 
     return {
@@ -352,5 +427,8 @@ def override_inspection(inspection_id: str, payload: InspectionOverrideRequest):
         "override_reason": inspection.override_reason,
         "final_decision": inspection.final_decision,
         "status": inspection.status,
+        "prep_hold": inspection.prep_hold,
+        "override": override.model_dump(mode="json"),
+        "evidence_record": record.model_dump(mode="json"),
         "agent_summary": inspection.agent_summary,
     }
