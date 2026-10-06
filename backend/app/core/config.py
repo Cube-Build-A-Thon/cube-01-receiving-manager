@@ -7,7 +7,8 @@ class Settings(BaseModel):
     app_name: str = "receiving-manager"
     api_key: str = ""
     ai_model: str = "gpt-4o-mini"
-    database_url: str = "sqlite:///./receiving_manager.db"
+    database_url: str = "postgresql+psycopg://localhost/receiving_manager"
+    auth_jwt_secret: str = ""
     max_image_size_mb: int = Field(default=10, ge=1)
     upload_max_images: int = Field(default=20, ge=1)
     allowed_image_types: str = "image/jpeg,image/png,image/webp"
@@ -28,7 +29,8 @@ def get_settings() -> Settings:
         app_name=os.getenv("APP_NAME", "receiving-manager"),
         api_key=os.getenv("AI_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""),
         ai_model=os.getenv("AI_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini")),
-        database_url=os.getenv("DATABASE_URL", "sqlite:///./receiving_manager.db"),
+        database_url=os.getenv("DATABASE_URL", "postgresql+psycopg://localhost/receiving_manager"),
+        auth_jwt_secret=os.getenv("AUTH_JWT_SECRET", ""),
         max_image_size_mb=int(os.getenv("MAX_IMAGE_SIZE_MB", "10")),
         upload_max_images=int(os.getenv("UPLOAD_MAX_IMAGES", "20")),
         allowed_image_types=os.getenv("ALLOWED_IMAGE_TYPES", "image/jpeg,image/png,image/webp"),

@@ -4,10 +4,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.core.auth import AuthenticatedPrincipal, get_current_principal
 from backend.app.core.config import get_settings
 from backend.app.core.decision_engine import evaluate_overall
 from backend.app.database.repository import InspectionRepository
@@ -63,7 +64,11 @@ def _build_agent_summary(inspection: Inspection) -> str:
     return "The receiving agent completed the inspection and recorded a conservative outcome based on the visible evidence."
 
 
-def _store_pending_review(inspection: Inspection, reason_code: str) -> dict:
+def _store_pending_review(
+    inspection: Inspection,
+    reason_code: str,
+    organization_id: str,
+) -> dict:
     inspection.status = "PENDING_REVIEW"
     inspection.final_decision = "UNCERTAIN"
     inspection.override_decision = None
@@ -82,7 +87,7 @@ def _store_pending_review(inspection: Inspection, reason_code: str) -> dict:
     except OSError:
         reason_code = "EVIDENCE_SEAL_FAILED"
         inspection.analysis_failure_reason_code = reason_code
-    repository.update(inspection)
+    repository.update(inspection, organization_id)
     return {
         "inspection_id": inspection.inspection_id,
         "decision": inspection.final_decision,
@@ -172,13 +177,16 @@ def _validate_image_upload(file: UploadFile, inspection_id: str):
 
 
 @router.get("")
-def list_inspections():
-    items = repository.list()
+def list_inspections(principal: AuthenticatedPrincipal = Depends(get_current_principal)):
+    items = repository.list(principal.organization_id)
     return {"items": [inspection.model_dump(mode="json") for inspection in items], "count": len(items)}
 
 
 @router.post("")
-def create_inspection(payload: InspectionCreateRequest):
+def create_inspection(
+    payload: InspectionCreateRequest,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+):
     try:
         inspection_id = repository.generate_id()
         inspection = Inspection(
@@ -192,23 +200,31 @@ def create_inspection(payload: InspectionCreateRequest):
             evidence=[],
             agent_summary="The receiving agent is waiting for intake and evidence capture.",
         )
-        repository.create(inspection)
+        repository.create(inspection, principal.organization_id)
         return inspection.model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/{inspection_id}")
-def get_inspection(inspection_id: str):
-    inspection = repository.get(inspection_id)
+def get_inspection(
+    inspection_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+):
+    inspection = repository.get(inspection_id, principal.organization_id)
     if inspection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
     return inspection.model_dump(mode="json")
 
 
 @router.post("/{inspection_id}/images")
-def upload_images(inspection_id: str, files: list[UploadFile] = File(...), image_type: str = Form("receiving_photo")):
-    inspection = repository.get(inspection_id)
+def upload_images(
+    inspection_id: str,
+    files: list[UploadFile] = File(...),
+    image_type: str = Form("receiving_photo"),
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+):
+    inspection = repository.get(inspection_id, principal.organization_id)
     if inspection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
 
@@ -242,13 +258,17 @@ def upload_images(inspection_id: str, files: list[UploadFile] = File(...), image
     inspection.images.extend(saved_images)
     inspection.updated_at = datetime.now(timezone.utc)
     inspection.status = "draft" if inspection.status == "draft" else inspection.status
-    repository.update(inspection)
+    repository.update(inspection, principal.organization_id)
     return {"inspection_id": inspection_id, "images": [image.model_dump(mode="json") for image in saved_images]}
 
 
 @router.get("/{inspection_id}/images/{image_id}")
-def get_inspection_image(inspection_id: str, image_id: str):
-    inspection = repository.get(inspection_id)
+def get_inspection_image(
+    inspection_id: str,
+    image_id: str,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+):
+    inspection = repository.get(inspection_id, principal.organization_id)
     if inspection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
 
