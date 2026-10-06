@@ -9,7 +9,7 @@ from .evidence import Evidence
 from .po import PurchaseOrder
 
 InspectionStatus = Literal["draft", "pending", "completed"]
-DecisionStatus = Literal["PASS", "FAIL", "UNCERTAIN"]
+DecisionStatus = Literal["PASS", "FAIL", "UNCERTAIN", "NOT_REQUIRED"]
 FinalDecision = Literal["PASS", "EXCEPTION", "UNCERTAIN"]
 
 

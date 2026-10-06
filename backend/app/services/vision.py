@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from backend.app.core.config import get_settings
 from backend.app.core.decision_engine import (
     evaluate_component_check,
+    evaluate_carton_check,
     evaluate_damage_check,
     evaluate_overall,
     evaluate_quantity_check,
@@ -17,7 +18,7 @@ from backend.app.core.decision_engine import (
 from backend.app.models.evidence import Evidence
 from backend.app.models.inspection import InspectionCheck, VisualObservation
 
-VALID_CHECK_TYPES = {"sku", "quantity", "variant", "damage", "components", "carton"}
+VALID_CHECK_TYPES = {"sku", "quantity", "variant", "damage", "components", "carton", "units_per_carton"}
 
 
 class VisionObservationItem(BaseModel):
@@ -243,27 +244,42 @@ class VisionService:
             for item in image_result.observations:
                 observations_by_type.setdefault(item.check_type, []).append(item)
 
-        quantity = self._first_numeric_observation(payload.images[0].observations, "quantity") if payload.images else None
-        carton = self._first_numeric_observation(payload.images[0].observations, "carton") if payload.images else None
-        variant = self._first_observation_value(payload.images[0].observations, "variant") if payload.images else None
-        sku = self._first_observation_value(payload.images[0].observations, "sku") if payload.images else None
-        observed_cartons = carton if carton is not None else (self.inspection.po.expected_cartons if quantity is not None else None)
-        damage = []
-        for item in payload.images[0].observations if payload.images else []:
-            if item.check_type == "damage" and item.observation not in {None, "none", "no_damage", "uncertain"}:
-                damage.append(str(item.observation))
-        components = []
-        for item in payload.images[0].observations if payload.images else []:
+        all_observations = [item for image_result in payload.images for item in image_result.observations]
+        quantity, quantity_conflict = self._merge_scalar_observations(observations_by_type.get("quantity", []), numeric=True)
+        observed_cartons, carton_conflict = self._merge_scalar_observations(observations_by_type.get("carton", []), numeric=True)
+        observed_units_per_carton, units_per_carton_conflict = self._merge_scalar_observations(
+            observations_by_type.get("units_per_carton", []), numeric=True
+        )
+        sku, sku_conflict = self._merge_scalar_observations(observations_by_type.get("sku", []))
+        variant, variant_conflict = self._merge_scalar_observations(observations_by_type.get("variant", []))
+        damage, damage_conflict = self._merge_damage_observations(observations_by_type.get("damage", []))
+        components: list[str] = []
+        seen_components: set[str] = set()
+        for item in all_observations:
             if item.check_type == "components" and isinstance(item.observation, list):
-                components = [str(value) for value in item.observation]
-                break
+                for value in item.observation:
+                    normalized = str(value).strip()
+                    if normalized and normalized.lower() not in seen_components:
+                        components.append(normalized)
+                        seen_components.add(normalized.lower())
 
         sku_result = evaluate_sku_check(self.inspection.po.sku, sku)
         quantity_result = evaluate_quantity_check(self.inspection.po.expected_quantity, quantity)
-        carton_result = evaluate_quantity_check(self.inspection.po.expected_cartons, observed_cartons)
+        carton_result = evaluate_carton_check(self.inspection.po.expected_cartons, observed_cartons)
+        units_per_carton_result = evaluate_quantity_check(self.inspection.po.units_per_carton, observed_units_per_carton)
         variant_result = evaluate_variant_check(self.inspection.po.variant, variant)
         damage_result = evaluate_damage_check(damage)
         component_result = evaluate_component_check(self.inspection.po.expected_components, components)
+        for result, conflict, name in (
+            (sku_result, sku_conflict, "SKU"),
+            (quantity_result, quantity_conflict, "quantity"),
+            (carton_result, carton_conflict, "carton count"),
+            (units_per_carton_result, units_per_carton_conflict, "units per carton"),
+            (variant_result, variant_conflict, "variant"),
+            (damage_result, damage_conflict, "damage"),
+        ):
+            if conflict:
+                result.update(status="UNCERTAIN", reason=f"Photos disagree about the observed {name}.")
 
         checks = [
             InspectionCheck(
@@ -291,6 +307,14 @@ class VisionService:
                 confidence=max((obs.confidence for obs in observations_by_type.get("carton", []) if obs.confidence is not None), default=0.0),
             ),
             InspectionCheck(
+                check_name="units_per_carton_check",
+                status=units_per_carton_result["status"],
+                expected_value=self.inspection.po.units_per_carton,
+                observed_value=observed_units_per_carton,
+                reason=units_per_carton_result["reason"],
+                confidence=max((obs.confidence for obs in observations_by_type.get("units_per_carton", []) if obs.confidence is not None), default=0.0),
+            ),
+            InspectionCheck(
                 check_name="variant_check",
                 status=variant_result["status"],
                 expected_value=self.inspection.po.variant,
@@ -316,6 +340,61 @@ class VisionService:
             ),
         ]
         return checks
+
+    @staticmethod
+    def _numeric_value(value: str | int | list[str] | None) -> int | None:
+        if isinstance(value, bool) or isinstance(value, list) or value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        cleaned = value.strip()
+        if not cleaned or cleaned.lower() in {"unknown", "n/a", "uncertain", "not_available"}:
+            return None
+        try:
+            return int(float(cleaned))
+        except ValueError:
+            return None
+
+    @classmethod
+    def _merge_scalar_observations(
+        cls, observations: list[VisionObservationItem], numeric: bool = False
+    ) -> tuple[str | int | None, bool]:
+        available: list[tuple[str | int, str | int]] = []
+        for item in observations:
+            value = cls._numeric_value(item.observation) if numeric else item.observation
+            if not numeric and isinstance(value, str):
+                value = value.strip()
+                if not value or value.lower() in {"unknown", "n/a", "uncertain", "not_available"}:
+                    value = None
+            if value is not None and not isinstance(value, list):
+                normalized = str(value).strip().lower() if isinstance(value, str) else value
+                available.append((normalized, value))
+        if not available:
+            return None, False
+        if len({normalized for normalized, _ in available}) > 1:
+            return None, True
+        return available[0][1], False
+
+    @staticmethod
+    def _merge_damage_observations(
+        observations: list[VisionObservationItem],
+    ) -> tuple[list[str] | None, bool]:
+        readings: list[list[str]] = []
+        for item in observations:
+            value = item.observation
+            if value is None:
+                continue
+            values = value if isinstance(value, list) else [value]
+            normalized = sorted(str(entry).strip().lower() for entry in values if str(entry).strip())
+            if not normalized:
+                continue
+            readings.append(normalized)
+        if not readings:
+            return None, False
+        signatures = {tuple(reading) for reading in readings}
+        if len(signatures) > 1:
+            return None, True
+        return readings[0], False
 
     @staticmethod
     def _first_observation_value(observations: list[VisionObservationItem], check_type: str):

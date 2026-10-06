@@ -95,25 +95,30 @@ def evaluate_variant_check(expected_variant, observed_variant):
     return {"status": "FAIL", "reason": f"Variant mismatch: expected {expected_variant}, observed {observed_variant}."}
 
 
+def _contains_uncertain_damage(observed_damage):
+    values = observed_damage if isinstance(observed_damage, (list, tuple, set)) else [observed_damage]
+    return any(
+        isinstance(item, str)
+        and item.strip().lower() in {"uncertain", "unknown", "not_visible", "n/a", "not_available"}
+        for item in values
+    )
+
+
 def evaluate_damage_check(observed_damage):
     if observed_damage is None:
         return {"status": "UNCERTAIN", "reason": "Damage status is unavailable because the evidence is insufficient."}
-    if isinstance(observed_damage, list):
-        if not observed_damage:
-            return {"status": "PASS", "reason": "No visible damage was detected."}
-        normalized = [_normalize(item) for item in observed_damage]
-        if any(item in {"uncertain", "unknown", "not_visible"} for item in normalized if item is not None):
-            return {"status": "UNCERTAIN", "reason": "Damage status could not be verified from the evidence."}
-        if any(item not in {None, "none", "no_damage", "", "not_visible"} for item in normalized):
-            return {"status": "FAIL", "reason": f"Visible damage detected: {observed_damage}."}
+
+    if _contains_uncertain_damage(observed_damage):
+        return {"status": "UNCERTAIN", "reason": "Damage status could not be verified from the evidence."}
+
+    values = observed_damage if isinstance(observed_damage, (list, tuple, set)) else [observed_damage]
+    if not values:
         return {"status": "PASS", "reason": "No visible damage was detected."}
 
-    normalized = _normalize(observed_damage)
-    if normalized in {None, "none", "no_damage"}:
-        return {"status": "PASS", "reason": "No visible damage was detected."}
-    if normalized in {"uncertain", "unknown", "not_visible"}:
-        return {"status": "UNCERTAIN", "reason": "Damage status could not be verified from the evidence."}
-    return {"status": "FAIL", "reason": f"Visible damage detected: {observed_damage}."}
+    normalized = [_normalize(item) for item in values]
+    if any(item not in {None, "none", "no_damage", "", "not_visible"} for item in normalized):
+        return {"status": "FAIL", "reason": f"Visible damage detected: {observed_damage}."}
+    return {"status": "PASS", "reason": "No visible damage was detected."}
 
 
 def evaluate_component_check(expected_components, observed_components):
@@ -121,7 +126,7 @@ def evaluate_component_check(expected_components, observed_components):
     observed = [str(item).strip() for item in (observed_components or []) if str(item).strip()]
 
     if not expected:
-        return {"status": "PASS", "reason": "No expected components were provided."}
+        return {"status": "NOT_REQUIRED", "reason": "No components are required by the purchase order."}
     if not observed:
         return {"status": "UNCERTAIN", "reason": "Component presence could not be confirmed from the available evidence."}
 
