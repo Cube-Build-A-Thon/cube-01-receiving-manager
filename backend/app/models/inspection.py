@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from .evidence import Evidence
 from .po import PurchaseOrder
 
-InspectionStatus = Literal["draft", "pending", "completed"]
+InspectionStatus = Literal["draft", "pending", "completed", "PENDING_REVIEW"]
 DecisionStatus = Literal["PASS", "FAIL", "UNCERTAIN", "NOT_REQUIRED"]
 FinalDecision = Literal["PASS", "EXCEPTION", "UNCERTAIN"]
 
@@ -88,6 +88,7 @@ class Inspection(BaseModel):
     final_decision: FinalDecision = "UNCERTAIN"
     override_decision: FinalDecision | None = None
     override_reason: str | None = None
+    analysis_failure_reason_code: str | None = None
     agent_summary: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

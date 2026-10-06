@@ -214,7 +214,12 @@ class VisionService:
             except ImportError as exc:  # pragma: no cover - handled by env constraints
                 raise RuntimeError("The OpenAI Python SDK is not installed. Add openai to backend requirements.") from exc
 
-            client = openai.OpenAI(api_key=settings.api_key, base_url=settings.openai_base_url or None)
+            client = openai.OpenAI(
+                api_key=settings.api_key,
+                base_url=settings.openai_base_url or None,
+                timeout=12.0,
+                max_retries=0,
+            )
             image_payload = []
             for image in self.inspection.images:
                 image_path = image.image_path

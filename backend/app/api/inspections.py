@@ -58,6 +58,32 @@ def _build_agent_summary(inspection: Inspection) -> str:
     return "The receiving agent completed the inspection and recorded a conservative outcome based on the visible evidence."
 
 
+def _store_pending_review(inspection: Inspection, reason_code: str) -> dict:
+    inspection.status = "PENDING_REVIEW"
+    inspection.final_decision = "UNCERTAIN"
+    inspection.override_decision = None
+    inspection.override_reason = None
+    inspection.analysis_failure_reason_code = reason_code
+    inspection.agent_summary = "AI analysis could not be completed; this inspection was preserved for manual review."
+    inspection.updated_at = datetime.now(timezone.utc)
+    inspection.checks = []
+    inspection.evidence = []
+    inspection.observations = []
+    repository.update(inspection)
+    return {
+        "inspection_id": inspection.inspection_id,
+        "decision": inspection.final_decision,
+        "checks": [],
+        "evidence": [],
+        "observations": [],
+        "demo_mode": False,
+        "analysis_status": "pending_review",
+        "status": inspection.status,
+        "reason_code": reason_code,
+        "agent_summary": inspection.agent_summary,
+    }
+
+
 def _detect_image_mime(content: bytes) -> str:
     if content.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -232,6 +258,7 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
         inspection.final_decision = result["decision"]
         inspection.override_decision = None
         inspection.override_reason = None
+        inspection.analysis_failure_reason_code = None
         inspection.agent_summary = _build_agent_summary(inspection)
         inspection.status = "completed"
         inspection.updated_at = datetime.now(timezone.utc)
@@ -248,27 +275,40 @@ def analyze_inspection(inspection_id: str, scenario: str | None = None):
         }
 
     if not settings.api_key:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="AI analysis is not configured. Set AI_API_KEY or OPENAI_API_KEY in the environment.")
+        return _store_pending_review(inspection, "AI_API_KEY_MISSING")
     if not inspection.images:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No images uploaded for analysis")
 
     try:
         result = VisionService(inspection).analyze(scenario=scenario)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+        checks = [InspectionCheck.model_validate(item) for item in result["checks"]]
+        evidence = [
+            __import__("backend.app.models.evidence", fromlist=["Evidence"]).Evidence.model_validate(item)
+            for item in result["evidence"]
+        ]
+        observations = [
+            __import__("backend.app.models.inspection", fromlist=["VisualObservation"]).VisualObservation.model_validate(item)
+            for item in result["observations"]
+        ]
+        decision = result["decision"]
+        if decision not in {"PASS", "EXCEPTION", "UNCERTAIN"}:
+            raise ValueError("AI analysis returned an unsupported decision.")
+    except Exception as exc:
+        if isinstance(exc, TimeoutError) or type(exc).__name__ in {"APITimeoutError", "TimeoutException"}:
+            reason_code = "AI_ANALYSIS_TIMEOUT"
+        elif isinstance(exc, (ValueError, KeyError, TypeError)):
+            reason_code = "AI_INVALID_RESPONSE"
+        else:
+            reason_code = "AI_ANALYSIS_FAILED"
+        return _store_pending_review(inspection, reason_code)
 
-    inspection.checks = [InspectionCheck.model_validate(item) for item in result["checks"]]
-    inspection.evidence = []
-    for evidence in result["evidence"]:
-        inspection.evidence.append(__import__("backend.app.models.evidence", fromlist=["Evidence"]).Evidence.model_validate(evidence))
-    inspection.observations = []
-    for observation in result["observations"]:
-        inspection.observations.append(__import__("backend.app.models.inspection", fromlist=["VisualObservation"]).VisualObservation.model_validate(observation))
-    inspection.final_decision = result["decision"]
+    inspection.checks = checks
+    inspection.evidence = evidence
+    inspection.observations = observations
+    inspection.final_decision = decision
     inspection.override_decision = None
     inspection.override_reason = None
+    inspection.analysis_failure_reason_code = None
     inspection.agent_summary = _build_agent_summary(inspection)
     inspection.status = "completed"
     inspection.updated_at = datetime.now(timezone.utc)

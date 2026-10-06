@@ -54,12 +54,14 @@ def _output(image_ids):
 def test_responses_api_uses_strict_text_json_schema_and_blind_prompt(monkeypatch, tmp_path):
     inspection = _inspection(["IMG-1", "IMG-2"], tmp_path)
     captured = {}
+    client_options = {}
 
     def create(**kwargs):
         captured.update(kwargs)
         return SimpleNamespace(output_text=json.dumps(_output(["IMG-1", "IMG-2"])))
 
     def openai_client(**kwargs):
+        client_options.update(kwargs)
         return SimpleNamespace(responses=SimpleNamespace(create=create))
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=openai_client))
@@ -67,6 +69,8 @@ def test_responses_api_uses_strict_text_json_schema_and_blind_prompt(monkeypatch
 
     VisionService(inspection).analyze()
 
+    assert client_options["timeout"] == 12.0
+    assert client_options["max_retries"] == 0
     assert "response_format" not in captured
     output_format = captured["text"]["format"]
     assert output_format["type"] == "json_schema"

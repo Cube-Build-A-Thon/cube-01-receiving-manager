@@ -224,8 +224,64 @@ def test_missing_api_key_for_analysis(monkeypatch):
     get_settings.cache_clear()
     inspection = _create_inspection({"po": {"po_id": "PO-2011", "sku": "BLUE-BOTTLE-001", "product_name": "Blue Bottle", "expected_quantity": 24, "variant": "Blue", "units_per_carton": 12, "expected_cartons": 2}})
     response = client.post(f"/api/inspections/{inspection['inspection_id']}/analyze")
-    assert response.status_code == 500
-    assert "API key" in response.json()["detail"] or "configured" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING_REVIEW"
+    assert response.json()["reason_code"] == "AI_API_KEY_MISSING"
+    stored = client.get(f"/api/inspections/{inspection['inspection_id']}").json()
+    assert stored["status"] == "PENDING_REVIEW"
+    assert stored["analysis_failure_reason_code"] == "AI_API_KEY_MISSING"
+    get_settings.cache_clear()
+
+
+def test_model_timeout_is_stored_for_manual_review(monkeypatch):
+    from backend.app.api.inspections import VisionService
+
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.delenv("DEMO_MODE", raising=False)
+    get_settings.cache_clear()
+    inspection = _create_inspection({"po": {"po_id": "PO-2014", "sku": "BLUE-BOTTLE-001", "product_name": "Blue Bottle", "expected_quantity": 24, "variant": "Blue", "units_per_carton": 12, "expected_cartons": 2}})
+    upload = client.post(
+        f"/api/inspections/{inspection['inspection_id']}/images",
+        files=[("files", ("photo.png", _png_bytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+
+    def raise_timeout(self, scenario=None):
+        raise TimeoutError("model timed out")
+
+    monkeypatch.setattr(VisionService, "analyze", raise_timeout)
+    response = client.post(f"/api/inspections/{inspection['inspection_id']}/analyze")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING_REVIEW"
+    assert response.json()["reason_code"] == "AI_ANALYSIS_TIMEOUT"
+    stored = client.get(f"/api/inspections/{inspection['inspection_id']}").json()
+    assert stored["analysis_failure_reason_code"] == "AI_ANALYSIS_TIMEOUT"
+    get_settings.cache_clear()
+
+
+def test_invalid_model_result_is_stored_for_manual_review(monkeypatch):
+    from backend.app.api.inspections import VisionService
+
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.delenv("DEMO_MODE", raising=False)
+    get_settings.cache_clear()
+    inspection = _create_inspection({"po": {"po_id": "PO-2015", "sku": "BLUE-BOTTLE-001", "product_name": "Blue Bottle", "expected_quantity": 24, "variant": "Blue", "units_per_carton": 12, "expected_cartons": 2}})
+    upload = client.post(
+        f"/api/inspections/{inspection['inspection_id']}/images",
+        files=[("files", ("photo.png", _png_bytes(), "image/png"))],
+    )
+    assert upload.status_code == 200
+    monkeypatch.setattr(VisionService, "analyze", lambda self, scenario=None: {})
+
+    response = client.post(f"/api/inspections/{inspection['inspection_id']}/analyze")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING_REVIEW"
+    assert response.json()["reason_code"] == "AI_INVALID_RESPONSE"
+    stored = client.get(f"/api/inspections/{inspection['inspection_id']}").json()
+    assert stored["analysis_failure_reason_code"] == "AI_INVALID_RESPONSE"
+    get_settings.cache_clear()
 
 
 def test_demo_mode_analysis_returns_structured_decision(monkeypatch):
