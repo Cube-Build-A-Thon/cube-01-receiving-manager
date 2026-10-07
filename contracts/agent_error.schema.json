@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_error.schema.json",
+  "title": "Receiving Manager Agent Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "retryable"],
+  "properties": {
+    "code": {"enum": ["INVALID_REQUEST", "INVALID_AGENT", "UNSUPPORTED_ACTION", "MISSING_PAYLOAD", "INVALID_PURCHASE_ORDER", "NO_EVIDENCE", "ANALYSIS_FAILED", "VISION_TIMEOUT", "INTERNAL_ERROR"]},
+    "message": {"type": "string", "minLength": 1},
+    "retryable": {"type": "boolean"},
+    "details": {"type": ["object", "null"], "additionalProperties": true}
+  }
+}

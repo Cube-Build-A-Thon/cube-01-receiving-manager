@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "receiving_response.schema.json",
+  "title": "Receiving Manager Agent Response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "agent", "status"],
+  "properties": {
+    "request_id": {"type": "string"},
+    "agent": {"const": "receiving-manager"},
+    "status": {"enum": ["success", "failed", "partial"]},
+    "result": {
+      "anyOf": [
+        {"$ref": "#/$defs/ReceivingResult"},
+        {"type": "null"}
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {"$ref": "#/$defs/AgentError"},
+        {"type": "null"}
+      ]
+    },
+    "metadata": {"type": ["object", "null"], "additionalProperties": true}
+  },
+  "$defs": {
+    "ReceivingEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "image_id", "check_type", "confidence", "description"],
+      "properties": {
+        "evidence_id": {"type": "string", "minLength": 1},
+        "image_id": {"type": "string", "minLength": 1},
+        "check_type": {"enum": ["sku", "quantity", "variant", "damage", "components", "carton"]},
+        "observation": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "integer"},
+            {"type": "array", "items": {"type": "string"}},
+            {"type": "null"}
+          ]
+        },
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "description": {"type": "string", "minLength": 1},
+        "bounding_region": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    },
+    "InspectionCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_name", "status", "reason", "confidence"],
+      "properties": {
+        "check_name": {"type": "string", "minLength": 1},
+        "status": {"enum": ["PASS", "FAIL", "UNCERTAIN"]},
+        "expected_value": {"$ref": "#/$defs/CheckValue"},
+        "observed_value": {"$ref": "#/$defs/CheckValue"},
+        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+        "reason": {"type": "string", "minLength": 1},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "CheckValue": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "integer"},
+        {"type": "array", "items": {"type": "string"}},
+        {"type": "null"}
+      ]
+    },
+    "VisualObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confidence"],
+      "properties": {
+        "detected_sku": {"type": ["string", "null"]},
+        "detected_product_name": {"type": ["string", "null"]},
+        "observed_quantity": {"type": ["integer", "null"], "minimum": 0},
+        "observed_cartons": {"type": ["integer", "null"], "minimum": 0},
+        "observed_units_per_carton": {"type": ["integer", "null"], "minimum": 1},
+        "detected_variant": {"type": ["string", "null"]},
+        "damage_types": {"type": "array", "items": {"type": "string"}},
+        "missing_components": {"type": "array", "items": {"type": "string"}},
+        "visibility_quality": {"type": ["string", "null"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "AgentNextAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "reason", "priority"],
+      "properties": {
+        "agent": {"const": "recovery-manager"},
+        "reason": {"type": "string", "minLength": 1},
+        "priority": {"enum": ["low", "medium", "high"]}
+      }
+    },
+    "ReceivingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["po_id", "decision", "checks", "evidence", "observations", "findings", "next_action"],
+      "properties": {
+        "po_id": {"type": "string", "minLength": 1},
+        "decision": {"enum": ["PASS", "EXCEPTION", "UNCERTAIN"]},
+        "checks": {"type": "array", "items": {"$ref": "#/$defs/InspectionCheck"}},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/ReceivingEvidence"}},
+        "observations": {"type": "array", "items": {"$ref": "#/$defs/VisualObservation"}},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/InspectionCheck"}},
+        "next_action": {
+          "anyOf": [
+            {"$ref": "#/$defs/AgentNextAction"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "AgentError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"enum": ["INVALID_REQUEST", "INVALID_AGENT", "UNSUPPORTED_ACTION", "MISSING_PAYLOAD", "INVALID_PURCHASE_ORDER", "NO_EVIDENCE", "ANALYSIS_FAILED", "VISION_TIMEOUT", "INTERNAL_ERROR"]},
+        "message": {"type": "string", "minLength": 1},
+        "retryable": {"type": "boolean"},
+        "details": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    }
+  }
+}

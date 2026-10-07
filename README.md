@@ -1,182 +1,224 @@
-# Cube Buildathon · 01 · Receiving Manager
+# Receiving Manager
 
-**Commerce Context stream · Round 2 · Individual Build**
+A lightweight receiving-inspection workflow for validating purchase orders against shipment photos, producing structured evidence, and applying a deterministic PASS / EXCEPTION / UNCERTAIN decision.
 
-> Five agents, one unit, one record that follows it.
-> A physical product arrives, gets prepped, gets shipped, comes back. At every step a person makes a fast judgment that nobody records. **You build the agent that makes one of those judgments, and leaves proof.**
+## Problem statement
 
-**New here? Read these first:**
+A supplier shipment arrives with a purchase order, expected SKU, quantity, variant, carton count and component list. The receiving team needs to confirm what arrived, whether it matches the order, and whether visible damage or missing components create a claimable exception.
 
-1. [`GITHUB-GUIDE.md`](GITHUB-GUIDE.md) explains how to fork the repository, set it up, build and push your work.
-2. [`RULES.md`](RULES.md) covers the repository and engineering rules.
+## Solution
 
----
+This app uses:
 
-## Your problem statement: Receiving Manager
+- FastAPI as the backend API
+- Pydantic models for strict inspection contracts
+- local image storage for uploaded receiving photos
+- optional OpenAI-based multimodal analysis when an API key is configured
+- a deterministic Python decision engine for final verdicts
+- a React + Vite dashboard for inspection creation, uploads, analysis, and evidence display
 
-|                              |                                                                                     |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| **Position in the chain**    | Step 1 of 5. Supplier delivery.                                                     |
-| **Customer**                 | Seller or 3PL taking supplier delivery                                              |
-| **What gets recorded**       | Condition on arrival                                                                |
-| **Who consumes your output** | Prep Manager (next in the chain) and Recovery Manager (supplier and inbound claims) |
-
-A pallet arrives from a manufacturer, often overseas. Someone opens the cartons and decides whether what arrived is what was ordered: right SKU, right count, undamaged, to the quality agreed. Today this is a spot check at best. Shortages and defects surface weeks later when units fail in prep or come back as returns, by which point the supplier conversation is unwinnable because nothing was recorded on arrival.
-
-**What the agent returns, from photographs at the point of receipt:**
-
-* Identity of the goods against the purchase order line
-* Quantity received against quantity ordered, including carton count and units per carton
-* Damage visible on cartons and units: crushing, water, tears
-* Quality flags against the agreed spec: wrong colour, wrong variant, missing components, obvious defects
-
-> This is where supplier disputes originate, and the only point at which a claim against the supplier is still possible. Every downstream problem in this chain is cheaper if it was caught here.
-
-### The chain you are part of
+## Architecture
 
 ```text
- Supplier delivery      Inbound to Amazon     Outbound to buyer     Customer return        Money back
- ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
- │ 01 Receiving │ ───▶ │ 02 Prep      │ ───▶ │ 03 Pack      │ ───▶ │ 04 Returns   │      │ 05 Recovery  │
- │ condition on │      │ compliance   │      │ contents at  │      │ condition &  │      │ reads all    │
- │ arrival      │      │ proof        │      │ seal         │      │ disposition  │      │ four → claim │
- └──────┬───────┘      └──────┬───────┘      └──────┬───────┘      └──────┬───────┘      └──────▲───────┘
-        └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+React Frontend
+  ↓
+FastAPI Backend
+  ↓
+Vision Service
+  ↓
+Evidence Validation
+  ↓
+Decision Engine
+  ↓
+Inspection Result
 ```
 
-The first four are the same machine: a camera, a model, and a decision bound to a record. What changes is the ruleset, the buyer and the moment. The fifth has no camera. It turns the other four's records into a claim.
+## Features
 
-Your output has to be usable by another pod. That's deliberate, and it's scored.
+- Create inspections from a PO payload
+- Upload multiple receiving photos
+- Validate images by extension, MIME type, content signature, and size
+- Keep evidence tied to the correct image and inspection
+- Run AI analysis through a structured vision contract
+- Demonstrate controlled scenarios in demo mode without an API key
+- Return structured checks, evidence, and final decisions
 
----
+## Technology stack
 
-## Reference data
+- Python 3.14
+- FastAPI
+- Pydantic
+- React + Vite
+- OpenAI Python SDK (optional, when configured)
+- Local filesystem storage for uploads
 
-`data/` holds a **dummy** CSV for reference while you design and build. Its columns and meanings are listed in [`data/README.md`](data/README.md).
+## Setup
 
-**The data is synthetic.** The SKUs, ASINs, FNSKUs, orders, suppliers, operators and amounts are all invented. The requirement flags and fee amounts are **not** Amazon's real rules or fees. Engineering rule 5 applies: look the authoritative rule up. The `photo_refs` paths are placeholders, and no images ship with this repo. Your fixtures and eval set are yours to capture.
+1. Create a virtual environment.
+2. Install backend dependencies.
+3. Copy `.env.example` to `.env` and fill in the values.
+4. Start the backend with uvicorn.
+5. Start the frontend with Vite.
 
-All five buildathon repos share the same `unit_id` values (`UNIT-0001` … `UNIT-0100`). You can follow one unit from receiving through recovery, the same way the real records will be joined. In the sample, each unit takes one route: **FBA** (prep, then Amazon ships it and charges fees) or **merchant-fulfilled / 3PL** (the seller packs it). So a unit has a Prep record or a Pack record, never both.
+## Environment variables
 
----
-
-## How this works
-
-You have a defined problem statement, supporting domain information and an engineering repository to build from. Understand the customer and operational workflow before writing code, then build and measure whether the solution works.
-
-Your goal is to turn the Receiving Manager problem into a working, measurable agent.
-
-### What you're given
-
-* This problem statement
-* A domain brief covering the real economics, fee structures and what a working day in a warehouse looks like *(shared by the organisers)*
-* The engineering rules in [`RULES.md`](RULES.md)
-* Repository data and supporting resources
-* One fully worked package for Returns Manager (customer letter, PR/FAQ, one-pager) as a reference for the standard expected. **Read it. Don't copy it.**
-
-### What you produce
-
-Build your solution in **your own GitHub fork**.
-
-Your final Round 2 submission should include:
-
-* A working Receiving Manager
-* A `README.md` explaining your solution, setup, assumptions and limitations
-* An `ARCHITECTURE.md`
-* An eval report/results with numbers and named failure modes
-* A working demo/video
-* A deployment URL, where applicable
-* Your mandatory LinkedIn post URL
-
-## Build and submission flow
-
-```text
-Understand
-    ↓
-Build
-    ↓
-Test
-    ↓
-Evaluate
-    ↓
-Document
-    ↓
-Demo / Deploy
-    ↓
-Submit
+```bash
+AI_API_KEY=
+OPENAI_API_KEY=
+AI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-4o-mini
+DEMO_MODE=true
+MAX_IMAGE_SIZE_MB=10
+UPLOAD_MAX_IMAGES=20
+ALLOWED_IMAGE_TYPES=image/jpeg,image/png,image/webp
+ALLOWED_EXTENSIONS=.jpg,.jpeg,.png,.webp
+UPLOAD_ROOT_DIR=uploads
+FASTAPI_HOST=0.0.0.0
+FASTAPI_PORT=8000
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://your-frontend-domain.com
+VITE_API_BASE_URL=http://localhost:8000
 ```
 
-Round 2 is an **individual build**.
+## Running locally
 
-The official build phase begins on **25 September 2026 at 9:00 AM IST**.
+Backend:
 
-Submissions open from **27 September 2026**.
-
-The final submission deadline is **1 October 2026 at 6:00 PM IST**.
-
-The submission form closes permanently at the deadline. **There is no resubmission.**
-
-All code commits forming your Round 2 submission must be made during the authorised build phase. Do not continue making Round 2 code changes after the build phase ends.
-
-## What we're being straight with you about
-
-* **The core assumption is untested.** Nobody knows yet whether vision models can identify products and grade condition on long-tail catalogues without per-SKU training. Finding out that it doesn't hold, and documenting that clearly, counts as a successful outcome.
-* **Nobody has spoken to a customer yet.** If you can get a real prep center or seller on a call, ask them to rank the five problems by urgency. Don't ask whether they'd buy what you're building.
-* **The background documents disagree in places.** A contradiction is a finding. Raise it as an Issue labelled `finding`.
-
----
-
-## Evaluation
-
-Your Round 2 submission is evaluated out of **100 points**:
-
-| Criterion                                    |  Points |
-| -------------------------------------------- | ------: |
-| Problem Understanding & Solution Relevance   |  **15** |
-| Agent Functionality & Decision Quality       |  **25** |
-| Evaluation, Accuracy & Uncertainty Handling  |  **25** |
-| Evidence, Traceability & Engineering Quality |  **20** |
-| UX, Demo & Documentation                     |  **15** |
-| **TOTAL**                                    | **100** |
-
-For the vision-based portions of the Receiving Manager, use an appropriate unseen/held-out evaluation set and report your methodology, results, false positives, false negatives, `UNCERTAIN` cases and failure modes.
-
----
-
-## Evidence and decision traceability
-
-Your Receiving Manager should leave evidence behind for its decisions.
-
-At minimum, the workflow should make it possible to understand:
-
-```text
-What was received?
-        ↓
-What was expected?
-        ↓
-What checks were performed?
-        ↓
-What did the agent find?
-        ↓
-What verdict was produced?
-        ↓
-Why?
+```bash
+cd /workspaces/cube-01-receiving-manager
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Use the official evidence contract provided by the organisers as the baseline for interoperability with the other Managers.
+Frontend:
 
----
+```bash
+cd /workspaces/cube-01-receiving-manager/frontend
+npm install
+npm run dev -- --host 0.0.0.0
+```
 
-## PASS · FAIL · UNCERTAIN
+## Deployment
 
-For individual checks:
+The app is ready for deployment as a split frontend + backend setup or as containerized services.
 
-* **PASS** — the evidence supports the condition.
-* **FAIL** — the evidence shows the condition is not met.
-* **UNCERTAIN** — the evidence is insufficient for a reliable judgment.
+Backend container:
 
-`UNCERTAIN` is not simply a low-confidence PASS.
+```bash
+docker build -t receiving-manager-backend .
+docker run --rm -p 8000:8000 --env-file .env receiving-manager-backend
+```
 
----
+Frontend static build:
 
-*CUBE Buildathon · Commerce Context*
+```bash
+cd frontend
+docker build --build-arg VITE_API_BASE_URL=https://your-backend-domain.com -t receiving-manager-frontend .
+docker run --rm -p 80:80 receiving-manager-frontend
+```
+
+For production hosting, set the backend `CORS_ALLOWED_ORIGINS` value to your deployed frontend domain and keep `VITE_API_BASE_URL` pointed at the public backend URL.
+
+## Demo mode
+
+When `DEMO_MODE=true`, the backend can run controlled scoring scenarios without a real API key. The current demo scenarios are:
+
+- Correct Shipment
+- Short Shipment
+- Wrong Variant
+- Damaged Carton
+- Ambiguous
+
+This is clearly labeled in the UI and should not be mistaken for real AI output.
+
+## API overview
+
+- `GET /api/health`
+- `POST /api/inspections`
+- `GET /api/inspections`
+- `GET /api/inspections/{inspection_id}`
+- `POST /api/inspections/{inspection_id}/images`
+- `GET /api/inspections/{inspection_id}/images/{image_id}`
+- `POST /api/inspections/{inspection_id}/analyze`
+
+## Round 3 A2A Integration
+
+The Receiving Manager exposes a separate, versioned A2A API for the Pod orchestrator:
+
+- Agent identity: `receiving-manager`
+- Agent version: `1.0.0`
+- Protocol version: `1.0`
+- Supported action: `verify_receiving`
+- `GET /api/v1/agent/receiving/health`
+- `GET /api/v1/agent/receiving/capabilities`
+- `POST /api/v1/agent/receiving`
+
+The request includes `request_id`, `agent`, `action`, and a payload containing `purchase_order`, `shipment`, and `evidence`. Evidence consists of supplied observations; the endpoint does not invent shipment facts. Successful responses contain the deterministic receiving decision (`PASS`, `EXCEPTION`, or `UNCERTAIN`), checks, evidence/findings, and an optional `next_action`. An exception may recommend `recovery-manager`, but the orchestrator performs all agent routing.
+
+Errors return `status: "failed"` and a structured error with a code, message, and retryable flag; no fake success is returned when analysis fails. See [docs/A2A.md](docs/A2A.md) for request/response examples, error behavior, capabilities, and the orchestrator responsibility boundary. Machine-readable schemas are in `contracts/`.
+
+## AI workflow
+
+- load inspection photos from the storage layer
+- validate image availability and ownership
+- submit PO context and image metadata to the model
+- require structured JSON output
+- validate the AI response against a strict Pydantic contract
+- create evidence records and deterministic checks
+- let the Python decision engine resolve the final verdict
+
+## Decision logic
+
+The final verdict is determined by deterministic Python logic, not by the LLM.
+
+- if any required check fails, the result is `EXCEPTION`
+- if no check fails but any required check is uncertain, the result is `UNCERTAIN`
+- if all required checks pass, the result is `PASS`
+
+## Evidence model
+
+Every evidence item points back to a source image and stores:
+
+- evidence id
+- image id
+- check type
+- observation
+- confidence
+- description
+- optional bounding region
+
+## Uncertainty handling
+
+The system is deliberately conservative:
+
+- unobservable quantities become `UNCERTAIN`
+- ambiguous variants become `UNCERTAIN`
+- damaged cartons must be clearly visible to trigger `FAIL`
+- missing components are only reported when visible evidence supports the finding
+
+## Security
+
+The upload pipeline validates:
+
+- extension and MIME type
+- file signature and image contents
+- file size limits
+- inspection-scoped storage paths
+- path traversal prevention
+- maximum file counts per inspection
+
+## Limitations
+
+- Local filesystem storage is used for the demo build, not a multi-tenant production database.
+- OpenAI vision analysis is optional and requires a valid API key.
+- Real warehouse workflows, historical dashboards, and object-storage migration are still future work.
+- Demo mode is not a substitute for live multimodal inference.
+
+## Future improvements
+
+- integrate a production database
+- add object storage and indexing
+- add richer OCR and product matching
+- add e-signature or operator review workflow
+- add analytics and trend reporting across inspections
