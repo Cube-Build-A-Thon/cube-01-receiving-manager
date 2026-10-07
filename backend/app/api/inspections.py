@@ -288,8 +288,12 @@ def get_inspection_image(
 
 
 @router.post("/{inspection_id}/analyze")
-def analyze_inspection(inspection_id: str, scenario: str | None = None):
-    inspection = repository.get(inspection_id)
+def analyze_inspection(
+    inspection_id: str,
+    scenario: str | None = None,
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+):
+    inspection = repository.get(inspection_id, principal.organization_id)
     if inspection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inspection not found")
 
